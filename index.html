@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tip Calculator</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f4f1ea;
+      --card: #fffdf8;
+      --ink: #1c1915;
+      --muted: #6b645b;
+      --line: #e4ddd2;
+      --accent: #1f6b4a;
+      --accent-ink: #f7fff9;
+      --chip: #efeae1;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+    }
+
+    main {
+      width: min(420px, 100%);
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 28px 24px 24px;
+      box-shadow: 0 16px 40px rgba(40, 28, 12, 0.08);
+    }
+
+    h1 {
+      margin: 0 0 4px;
+      font-size: 1.5rem;
+      font-weight: 650;
+    }
+
+    p.lede {
+      margin: 0 0 22px;
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 0.85rem;
+      font-weight: 600;
+    }
+
+    .field { margin-bottom: 16px; }
+
+    input[type="number"] {
+      width: 100%;
+      padding: 12px 14px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      font: inherit;
+      background: #fff;
+      color: inherit;
+    }
+
+    input:focus {
+      outline: 2px solid var(--accent);
+      outline-offset: 1px;
+    }
+
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .chips button {
+      border: 1px solid var(--line);
+      background: var(--chip);
+      color: inherit;
+      border-radius: 999px;
+      padding: 8px 14px;
+      font: inherit;
+      cursor: pointer;
+    }
+
+    .chips button[aria-pressed="true"] {
+      background: var(--accent);
+      color: var(--accent-ink);
+      border-color: var(--accent);
+    }
+
+    .results {
+      margin-top: 8px;
+      padding-top: 16px;
+      border-top: 1px solid var(--line);
+      display: grid;
+      gap: 10px;
+    }
+
+    .row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 12px;
+    }
+
+    .row span { color: var(--muted); }
+
+    .row strong {
+      font-size: 1.15rem;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .row.total strong { font-size: 1.45rem; }
+
+    .error {
+      min-height: 1.2em;
+      margin: 0 0 8px;
+      color: #9b2c2c;
+      font-size: 0.85rem;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Tip calculator</h1>
+    <p class="lede">Enter the bill, pick a tip, and split it if you are sharing.</p>
+
+    <form id="tip-form">
+      <div class="field">
+        <label for="bill">Bill amount</label>
+        <input id="bill" name="bill" type="number" inputmode="decimal" min="0" step="0.01" placeholder="0.00" required>
+      </div>
+
+      <div class="field">
+        <label id="tip-label">Tip</label>
+        <div class="chips" role="group" aria-labelledby="tip-label">
+          <button type="button" data-tip="10">10%</button>
+          <button type="button" data-tip="15">15%</button>
+          <button type="button" data-tip="18">18%</button>
+          <button type="button" data-tip="20">20%</button>
+          <button type="button" data-tip="25">25%</button>
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="custom-tip">Custom tip %</label>
+        <input id="custom-tip" name="custom-tip" type="number" inputmode="decimal" min="0" max="100" step="0.5" placeholder="Or type a percent">
+      </div>
+
+      <div class="field">
+        <label for="people">Split between</label>
+        <input id="people" name="people" type="number" inputmode="numeric" min="1" step="1" value="1" required>
+      </div>
+
+      <p class="error" id="error" role="status"></p>
+    </form>
+
+    <section class="results" aria-live="polite">
+      <div class="row">
+        <span>Tip</span>
+        <strong id="tip-amount">—</strong>
+      </div>
+      <div class="row total">
+        <span>Total</span>
+        <strong id="total">—</strong>
+      </div>
+      <div class="row">
+        <span>Each person</span>
+        <strong id="each">—</strong>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const billInput = document.getElementById("bill");
+    const customTipInput = document.getElementById("custom-tip");
+    const peopleInput = document.getElementById("people");
+    const errorEl = document.getElementById("error");
+    const tipButtons = document.querySelectorAll("[data-tip]");
+
+    let presetPercent = null;
+
+    function money(amount) {
+      return amount.toLocaleString("en-US", { style: "currency", currency: "USD" });
+    }
+
+    function showWaiting() {
+      document.getElementById("tip-amount").textContent = "—";
+      document.getElementById("total").textContent = "—";
+      document.getElementById("each").textContent = "—";
+    }
+
+    function calculate() {
+      const billText = billInput.value.trim();
+      const people = Number(peopleInput.value);
+      const custom = customTipInput.value.trim();
+      const tipPercent = custom === "" ? presetPercent : Number(custom);
+      const bill = Number(billText);
+
+      tipButtons.forEach((button) => {
+        const selected = custom === "" && Number(button.dataset.tip) === presetPercent;
+        button.setAttribute("aria-pressed", selected ? "true" : "false");
+      });
+
+      if (billText === "" || tipPercent === null) {
+        errorEl.textContent = "";
+        showWaiting();
+        return;
+      }
+
+      if (!Number.isFinite(bill) || bill < 0) {
+        errorEl.textContent = "Enter a bill of zero or more.";
+        return;
+      }
+      if (!Number.isFinite(tipPercent) || tipPercent < 0 || tipPercent > 100) {
+        errorEl.textContent = "Tip percent must be between 0 and 100.";
+        return;
+      }
+      if (!Number.isInteger(people) || people < 1) {
+        errorEl.textContent = "Split between at least 1 person.";
+        return;
+      }
+
+      errorEl.textContent = "";
+      const tip = bill * (tipPercent / 100);
+      const total = bill + tip;
+      document.getElementById("tip-amount").textContent = money(tip);
+      document.getElementById("total").textContent = money(total);
+      document.getElementById("each").textContent = money(total / people);
+    }
+
+    tipButtons.forEach((button) => {
+      button.addEventListener("click", () => {
+        presetPercent = Number(button.dataset.tip);
+        customTipInput.value = "";
+        tipButtons.forEach((item) => {
+          item.setAttribute("aria-pressed", item === button ? "true" : "false");
+        });
+        calculate();
+      });
+    });
+
+    [billInput, customTipInput, peopleInput].forEach((input) => {
+      input.addEventListener("input", calculate);
+    });
+
+    calculate();
+  </script>
+</body>
+</html>
